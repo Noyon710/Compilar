@@ -1,0 +1,161 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+struct State {
+    int id;
+    map<char, vector<int>> trans;
+    vector<int> epsilon;
+};
+
+vector<State> nfa;
+int startState, finalState;
+int stateCount = 0;
+
+int newState() {
+    State s;
+    s.id = stateCount;
+    nfa.push_back(s);
+    return stateCount++;
+}
+
+pair<int,int> buildNFA(string re) {
+    stack<pair<int,int>> st;
+    stack<char> op;
+
+    auto applyOp = [&](char oper) {
+        if (oper == '.') {
+            auto b = st.top(); st.pop();
+            auto a = st.top(); st.pop();
+            nfa[a.second].epsilon.push_back(b.first);
+            st.push({a.first, b.second});
+        }
+        else if (oper == '+') {
+            auto b = st.top(); st.pop();
+            auto a = st.top(); st.pop();
+            int s = newState();
+            int e = newState();
+            nfa[s].epsilon.push_back(a.first);
+            nfa[s].epsilon.push_back(b.first);
+            nfa[a.second].epsilon.push_back(e);
+            nfa[b.second].epsilon.push_back(e);
+            st.push({s,e});
+        }
+        else if (oper == '*') {
+            auto a = st.top(); st.pop();
+            int s = newState();
+            int e = newState();
+            nfa[s].epsilon.push_back(a.first);
+            nfa[s].epsilon.push_back(e);
+            nfa[a.second].epsilon.push_back(a.first);
+            nfa[a.second].epsilon.push_back(e);
+            st.push({s,e});
+        }
+    };
+
+    for (char c : re) {
+        if (c == 'a' || c == 'b') {
+            int s = newState();
+            int e = newState();
+            nfa[s].trans[c].push_back(e);
+            st.push({s,e});
+        }
+        else if (c == '(') continue;
+        else if (c == ')') {
+            while (!op.empty() && op.top() != '(') {
+                applyOp(op.top());
+                op.pop();
+            }
+            if (!op.empty()) op.pop();
+        }
+        else {
+            while (!op.empty() && op.top() != '(') {
+                applyOp(op.top());
+                op.pop();
+            }
+            op.push(c);
+        }
+    }
+
+    while (!op.empty()) {
+        applyOp(op.top());
+        op.pop();
+    }
+
+    return st.top();
+}
+
+set<int> epsilonClosure(set<int> states) {
+    stack<int> st;
+    set<int> closure = states;
+    for (int s : states) st.push(s);
+
+    while (!st.empty()) {
+        int u = st.top(); st.pop();
+        for (int v : nfa[u].epsilon) {
+            if (!closure.count(v)) {
+                closure.insert(v);
+                st.push(v);
+            }
+        }
+    }
+    return closure;
+}
+
+map<set<int>, map<char, set<int>>> dfa;
+set<set<int>> dfaStates;
+
+void buildDFA() {
+    set<int> start = epsilonClosure({startState});
+    queue<set<int>> q;
+    q.push(start);
+    dfaStates.insert(start);
+
+    while (!q.empty()) {
+        auto curr = q.front(); q.pop();
+        for (char c : {'a','b'}) {
+            set<int> next;
+            for (int s : curr)
+                for (int v : nfa[s].trans[c])
+                    next.insert(v);
+
+            next = epsilonClosure(next);
+            if (!next.empty()) {
+                dfa[curr][c] = next;
+                if (!dfaStates.count(next)) {
+                    dfaStates.insert(next);
+                    q.push(next);
+                }
+            }
+        }
+    }
+}
+
+bool matchString(string s) {
+    auto curr = *dfaStates.begin();
+    for (char c : s) {
+        if (!dfa[curr].count(c)) return false;
+        curr = dfa[curr][c];
+    }
+    return curr.count(finalState);
+}
+
+int main() {
+    string re;
+    cin >> re;
+
+    auto p = buildNFA(re);
+    startState = p.first;
+    finalState = p.second;
+
+    buildDFA();
+
+    string test;
+    cin >> test;
+
+    if (matchString(test))
+        cout << "Accepted\n";
+    else
+        cout << "Rejected\n";
+
+    return 0;
+}
